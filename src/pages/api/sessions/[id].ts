@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
+import sequelize from '../../../config/database';
+import { calculatePaymentDetails } from '../../../utils/paymentCalculations';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -31,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { 
         vehicleNo, arrivalSoc, departureSoc, ratePerPercent, chargeAmount,
         chargerType, paymentMethod, paymentStatus, companyBrand, remarks,
-        creditPaid, settlementMethod, settlementDate 
+        creditPaid, settlementMethod, settlementDate, isUdaro, udaroDueDate 
       } = req.body;
       
       // Get tenant settings for recalculation
@@ -51,6 +53,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (chargerType) updates.chargerType = chargerType;
       if (paymentMethod) updates.paymentMethod = paymentMethod;
       if (paymentStatus) updates.paymentStatus = paymentStatus;
+      
+      // Settlement (Udaro) fields
+      if (isUdaro !== undefined) updates.isUdaro = isUdaro;
+      if (udaroDueDate !== undefined) updates.udaroDueDate = udaroDueDate || null;
       
       // Recalculate if SOC, rate, or charge amount changed
       const newArrival = arrivalSoc !== undefined ? (arrivalSoc ? Number(arrivalSoc) : null) : session.arrivalSoc;
@@ -107,39 +113,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
       
-      // Payment / Udaro updates
+      // Payment / Udaro updates - USE ATOMIC TRANSACTION
       if (creditPaid !== undefined && creditPaid !== null) {
-        const finalChargeAmount = updates.chargeAmount || parseFloat(String(session.chargeAmount)) || 0;
-        const paidAmount = parseFloat(String(creditPaid)) || 0;
-        const remainingOutstanding = Math.max(0, finalChargeAmount - paidAmount);
-        
-        updates.creditPaid = parseFloat(paidAmount.toFixed(2));
-        updates.outstanding = parseFloat(remainingOutstanding.toFixed(2));
-        
-        // Auto-update payment status based on what's paid
-        if (!paymentStatus) { // only auto-update if paymentStatus not explicitly set
-          if (paidAmount <= 0) {
-            updates.paymentStatus = 'Pending';
-            updates.sessionStatus = 'pending_payment';
-          } else if (paidAmount >= finalChargeAmount) {
-            updates.paymentStatus = 'Paid';
-            updates.sessionStatus = 'completed';
-          } else {
-            updates.paymentStatus = 'Partially Paid';
-            updates.sessionStatus = 'pending_payment';
+        const transaction = await sequelize.transaction();
+        try {
+          const finalChargeAmount = updates.chargeAmount || parseFloat(String(session.chargeAmount)) || 0;
+          const paidAmount = parseFloat(String(creditPaid)) || 0;
+          
+          // Determine session status based on Departure SOC ONLY
+          const currentDepartureSoc = updates.departureSoc !== undefined ? updates.departureSoc : session.departureSoc;
+          const calculatedSessionStatus = (currentDepartureSoc != null && currentDepartureSoc !== '') ? 'completed' : 'ongoing';
+          
+          // Use shared calculation utility for consistency
+          const paymentDetails = calculatePaymentDetails(
+            finalChargeAmount,
+            paidAmount,
+            calculatedSessionStatus
+          );
+          
+          updates.creditPaid = paymentDetails.creditPaid;
+          updates.outstanding = paymentDetails.outstanding;
+          
+          // Auto-update payment status based on what's paid (unless explicitly overridden)
+          if (!paymentStatus) {
+            updates.paymentStatus = paymentDetails.paymentStatus;
           }
+          
+          // Always set session status based on Departure SOC
+          updates.sessionStatus = calculatedSessionStatus;
+          
+          await session.update(updates, { transaction });
+          await transaction.commit();
+          
+          console.log(`[Session Update] ${id}: Paid Rs.${paidAmount}, Outstanding Rs.${paymentDetails.outstanding}, Status=${paymentDetails.paymentStatus}, SessionStatus=${calculatedSessionStatus}`);
+        } catch (updateErr: any) {
+          await transaction.rollback();
+          console.error('[Session Update] Transaction failed, rolled back:', updateErr.message);
+          throw updateErr;
+        }
+      } else {
+        // Non-payment updates - still need to update session status if departure SOC changed
+        if (departureSoc !== undefined) {
+          const currentDepartureSoc = newDeparture;
+          updates.sessionStatus = (currentDepartureSoc != null && currentDepartureSoc !== '') ? 'completed' : 'ongoing';
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          await session.update(updates);
         }
       }
-      if (settlementMethod !== undefined) updates.settlementMethod = settlementMethod || null;
-      if (settlementDate !== undefined) updates.settlementDate = settlementDate || null;
+      
+      if (settlementMethod !== undefined) {
+        await session.update({ settlementMethod: settlementMethod || null });
+      }
+      if (settlementDate !== undefined) {
+        await session.update({ settlementDate: settlementDate || null });
+      }
       
       await session.update(updates);
+      
+      // Reload session to get fresh data
+      await session.reload();
+      
       return res.status(200).json({ message: 'Session updated', session });
     }
 
     res.status(405).json({ message: 'Method not allowed' });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('[Session API Error]:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 }

@@ -3,6 +3,7 @@ import Tenant from './Tenant';
 import User from './User';
 import ChargingSession from './ChargingSession';
 import Expense from './Expense';
+import Vehicle from './Vehicle';
 
 // Define associations
 User.belongsTo(Tenant, { foreignKey: 'tenantId', as: 'tenant' });
@@ -13,6 +14,9 @@ Tenant.hasMany(ChargingSession, { foreignKey: 'tenantId', as: 'chargingSessions'
 
 Expense.belongsTo(Tenant, { foreignKey: 'tenantId', as: 'tenant' });
 Tenant.hasMany(Expense, { foreignKey: 'tenantId', as: 'expenses' });
+
+Vehicle.belongsTo(Tenant, { foreignKey: 'tenantId', as: 'tenant' });
+Tenant.hasMany(Vehicle, { foreignKey: 'tenantId', as: 'vehicles' });
 
 // Sync database
 export const syncDatabase = async () => {
@@ -29,4 +33,4 @@ export const syncDatabase = async () => {
   }
 };
 
-export { sequelize, Tenant, User, ChargingSession, Expense };
+export { sequelize, Tenant, User, ChargingSession, Expense, Vehicle };

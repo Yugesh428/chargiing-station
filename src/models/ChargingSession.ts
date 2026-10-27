@@ -28,11 +28,14 @@ interface ChargingSessionAttributes {
   settlementMethod?: string;
   settlementDate?: Date;
   companyBrand?: string;
+  isUdaro?: boolean; // NEW: Marks if this is under Settlement (Udaro) arrangement
+  udaroDueDate?: Date; // NEW: When the Udaro payment is due
+  udaroSettledDate?: Date; // NEW: When the Udaro was fully paid
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-interface ChargingSessionCreationAttributes extends Optional<ChargingSessionAttributes, 'id' | 'time' | 'operator' | 'remarks' | 'creditPaid' | 'outstanding' | 'settlementMethod' | 'settlementDate' | 'companyBrand' | 'createdAt' | 'updatedAt'> {}
+interface ChargingSessionCreationAttributes extends Optional<ChargingSessionAttributes, 'id' | 'time' | 'operator' | 'remarks' | 'creditPaid' | 'outstanding' | 'settlementMethod' | 'settlementDate' | 'companyBrand' | 'isUdaro' | 'udaroDueDate' | 'udaroSettledDate' | 'createdAt' | 'updatedAt'> {}
 
 class ChargingSession extends Model<ChargingSessionAttributes, ChargingSessionCreationAttributes> implements ChargingSessionAttributes {
   public id!: string;
@@ -61,6 +64,9 @@ class ChargingSession extends Model<ChargingSessionAttributes, ChargingSessionCr
   public settlementMethod?: string;
   public settlementDate?: Date;
   public companyBrand?: string;
+  public isUdaro?: boolean;
+  public udaroDueDate?: Date;
+  public udaroSettledDate?: Date;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -195,6 +201,22 @@ ChargingSession.init(
     companyBrand: {
       type: DataTypes.STRING(100),
       allowNull: true,
+    },
+    isUdaro: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false,
+      comment: 'True if this transaction is under a Settlement (Udaro) credit arrangement',
+    },
+    udaroDueDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'Due date for the Udaro settlement payment',
+    },
+    udaroSettledDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: 'Date when the Udaro settlement was fully paid',
     },
   },
   {

@@ -14,7 +14,8 @@
     "migrate:optional-fields": "node scripts/makeFieldsOptional.js",
     "migrate:arrival-optional": "node scripts/makeArrivalOptional.js",
     "migrate:rate-master": "node scripts/addRateMaster.js",
-    "fix:outstanding": "node scripts/fixOutstanding.js"
+    "fix:outstanding": "node scripts/fixOutstanding.js",
+    "fix:vehicle-data": "node scripts/fixVehicleData.js"
   },
   "keywords": [],
   "author": "",

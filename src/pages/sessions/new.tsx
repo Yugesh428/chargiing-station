@@ -218,17 +218,17 @@ export default function NewSession() {
                   <div className="flex gap-2">
                     <Input type="number" min="1" step="0.01" placeholder="e.g. 7" value={form.ratePerPercent}
                       onChange={e => set('ratePerPercent', e.target.value)} required className="flex-1" />
-                    {tenantSettings?.rateMaster && Object.keys(tenantSettings.rateMaster).length > 0 && (
+                    {tenantSettings?.rateMaster && Array.isArray(tenantSettings.rateMaster) && tenantSettings.rateMaster.length > 0 && (
                       <select 
                         value="" 
                         onChange={e => e.target.value && set('ratePerPercent', e.target.value)}
                         className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                         <option value="">Quick Select</option>
-                        {Object.entries(tenantSettings.rateMaster)
-                          .sort((a: any, b: any) => a[1] - b[1]) // Sort by value ascending
-                          .map(([label, value]: [string, any]) => (
-                          <option key={label} value={value}>
-                            {label}: Rs. {value}/%
+                        {tenantSettings.rateMaster
+                          .sort((a: any, b: any) => a.value - b.value) // Sort by value ascending
+                          .map((rate: any) => (
+                          <option key={rate.label} value={rate.value}>
+                            {rate.label}: Rs. {rate.value}/%
                           </option>
                         ))}
                       </select>

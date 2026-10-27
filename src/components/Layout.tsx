@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   Zap, LayoutDashboard, Car, ListChecks, BarChart3,
-  Receipt, Settings, Users, LogOut, Plus, TrendingUp,
+  Receipt, Settings, Users, LogOut, Plus, TrendingUp, Banknote,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,15 +26,14 @@ interface LayoutProps {
 }
 
 const navItems = [
-  { label: 'Dashboard',   icon: LayoutDashboard, path: '/dashboard',        tab: 'dashboard'    },
-  { label: 'New Session', icon: Plus,             path: '/sessions/new',     tab: 'new-session'  },
-  { label: 'Manage',      icon: ListChecks,       path: '/sessions/manage',  tab: 'manage'       },
-  { label: 'Vehicles',    icon: Car,              path: '/vehicles',         tab: 'vehicles'     },
-  { label: 'Sessions',    icon: ListChecks,       path: '/sessions',         tab: 'sessions'     },
-  { label: 'Reports',     icon: BarChart3,        path: '/reports',          tab: 'reports'      },
-  { label: 'Analytics',   icon: TrendingUp,       path: '/analytics',        tab: 'analytics'    },
-  { label: 'Expenses',    icon: Receipt,          path: '/expenses',         tab: 'expenses'     },
-  { label: 'Settings',    icon: Settings,         path: '/settings',         tab: 'settings'     },
+  { label: 'Dashboard',   icon: LayoutDashboard, path: '/dashboard',   tab: 'dashboard'   },
+  { label: 'Sessions',    icon: ListChecks,       path: '/sessions',    tab: 'sessions'    },
+  { label: 'Vehicles',    icon: Car,              path: '/vehicles',    tab: 'vehicles'    },
+  { label: 'Settlement',  icon: Banknote,         path: '/settlement',  tab: 'settlement'  },
+  { label: 'Reports',     icon: BarChart3,        path: '/reports',     tab: 'reports'     },
+  { label: 'Analytics',   icon: TrendingUp,       path: '/analytics',   tab: 'analytics'   },
+  { label: 'Expenses',    icon: Receipt,          path: '/expenses',    tab: 'expenses'    },
+  { label: 'Settings',    icon: Settings,         path: '/settings',    tab: 'settings'    },
 ];
 
 export default function Layout({ children, activeTab, title }: LayoutProps) {

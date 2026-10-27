@@ -5,7 +5,7 @@ import {
   Zap, LayoutDashboard, Car, ListChecks,
   BarChart3, Receipt, Settings, Users,
   LogOut, TrendingUp, TrendingDown, CircleDollarSign,
-  BatteryCharging, AlertCircle, Plus, ChevronRight, Loader2,
+  BatteryCharging, AlertCircle, Plus, ChevronRight, Loader2, Banknote,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -52,9 +52,9 @@ const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', tab: 'dashboard' },
-  { label: 'New Session', icon: Plus, path: '/sessions/new', tab: 'new-session' },
-  { label: 'Vehicles', icon: Car, path: '/vehicles', tab: 'vehicles' },
   { label: 'Sessions', icon: ListChecks, path: '/sessions', tab: 'sessions' },
+  { label: 'Vehicles', icon: Car, path: '/vehicles', tab: 'vehicles' },
+  { label: 'Settlement', icon: Banknote, path: '/settlement', tab: 'settlement' },
   { label: 'Reports', icon: BarChart3, path: '/reports', tab: 'reports' },
   { label: 'Analytics', icon: TrendingUp, path: '/analytics', tab: 'analytics' },
   { label: 'Expenses', icon: Receipt, path: '/expenses', tab: 'expenses' },

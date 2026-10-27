@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
+import { normalizeOutstanding, calculatePaymentDetails } from '../../../utils/paymentCalculations';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -19,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { ChargingSession } = await import('../../../models');
 
     if (req.method === 'GET') {
-      const { startDate, endDate, vehicleNo, chargerType, paymentMethod, paymentStatus, page = '1', limit = '50' } = req.query;
+      const { startDate, endDate, vehicleNo, chargerType, paymentMethod, paymentStatus, sessionStatus, unpaidOnly, page = '1', limit = '50' } = req.query;
       const where: any = { tenantId };
       if (startDate && endDate) where.date = { [Op.between]: [startDate, endDate] };
       else if (startDate) where.date = { [Op.gte]: startDate };
@@ -27,6 +28,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (chargerType) where.chargerType = chargerType;
       if (paymentMethod) where.paymentMethod = paymentMethod;
       if (paymentStatus) where.paymentStatus = paymentStatus;
+      if (sessionStatus) where.sessionStatus = sessionStatus; // Add session status filter for tabs
+      
+      // Special filter for "Pending Payment" tab - show unpaid or partially paid sessions
+      if (unpaidOnly === 'true') {
+        where.paymentStatus = { [Op.in]: ['Pending', 'Partially Paid'] };
+      }
 
       const offset = (Number(page) - 1) * Number(limit);
       const { count, rows } = await ChargingSession.findAndCountAll({
@@ -34,11 +41,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         order: [['date', 'DESC'], ['createdAt', 'DESC']],
       });
 
-      return res.status(200).json({ sessions: rows, total: count, page: Number(page), totalPages: Math.ceil(count / Number(limit)) });
+      // Normalize outstanding: recalculate for sessions where it's 0/null but not Paid
+      const normalizedRows = rows.map(s => {
+        const plain = s.get({ plain: true });
+        const chargeAmount = parseFloat(String(plain.chargeAmount)) || 0;
+        const creditPaid = parseFloat(String(plain.creditPaid)) || 0;
+        const storedOutstanding = parseFloat(String(plain.outstanding));
+        
+        // Use shared utility for consistency
+        plain.outstanding = normalizeOutstanding(
+          chargeAmount,
+          creditPaid,
+          storedOutstanding,
+          plain.paymentStatus
+        );
+        
+        return plain;
+      });
+
+      return res.status(200).json({ sessions: normalizedRows, total: count, page: Number(page), totalPages: Math.ceil(count / Number(limit)) });
     }
 
     if (req.method === 'POST') {
-      const { date, time, vehicleNo, arrivalSoc, departureSoc, ratePerPercent, chargeAmount, chargerType, paymentMethod, paymentStatus, companyBrand, operator, remarks } = req.body;
+      const { date, time, vehicleNo, arrivalSoc, departureSoc, ratePerPercent, chargeAmount, chargerType, paymentMethod, paymentStatus, companyBrand, operator, remarks, isUdaro, udaroDueDate } = req.body;
 
       // Get user data from token for operator name
       const userData = decoded.fullName || decoded.username || 'Unknown';
@@ -106,26 +131,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         netContribution = finalChargeAmount - electricityCost;
       }
       
-      // UDARO (Credit) Logic:
-      // - If payment status is "Paid" → customer already paid, no udaro
-      // - If payment status is "Pending" → customer hasn't paid yet, full udaro
-      // - If payment status is "Partially Paid" → customer paid some, remaining is udaro
+      // UDARO (Credit) Logic - Use shared calculation utility
+      // SESSION STATUS RULE: Based ONLY on Departure SOC
+      // - departureSoc is NULL/empty → ongoing (still charging)
+      // - departureSoc is filled → completed (charging finished)
+      // Payment status is separate from session status
+      const currentSessionStatus = (departureSoc != null && departureSoc !== '') ? 'completed' : 'ongoing';
       
-      let outstanding = 0;
       let creditPaid = 0;
+      let outstanding = 0;
+      let actualPaymentStatus = finalPaymentStatus;
+      let actualSessionStatus = currentSessionStatus;
       
       if (finalPaymentStatus === 'Paid') {
-        // Already paid - no udaro (outstanding)
-        outstanding = 0;
-        creditPaid = finalChargeAmount;
+        // Customer already paid - use utility to calculate
+        const paymentDetails = calculatePaymentDetails(finalChargeAmount, finalChargeAmount, currentSessionStatus);
+        creditPaid = paymentDetails.creditPaid;
+        outstanding = paymentDetails.outstanding;
+        actualPaymentStatus = paymentDetails.paymentStatus;
+        actualSessionStatus = paymentDetails.sessionStatus;
       } else if (finalPaymentStatus === 'Pending') {
         // Not yet paid - full amount is udaro
-        outstanding = finalChargeAmount;
-        creditPaid = 0;
+        const paymentDetails = calculatePaymentDetails(finalChargeAmount, 0, currentSessionStatus);
+        creditPaid = paymentDetails.creditPaid;
+        outstanding = paymentDetails.outstanding;
+        actualPaymentStatus = paymentDetails.paymentStatus;
+        actualSessionStatus = paymentDetails.sessionStatus;
       } else if (finalPaymentStatus === 'Partially Paid') {
-        // Partially paid - some udaro remains
-        outstanding = finalChargeAmount; // Will be updated when payment is recorded
-        creditPaid = 0;
+        // Partially paid - calculate with 0 paid initially (will be updated later)
+        const paymentDetails = calculatePaymentDetails(finalChargeAmount, 0, currentSessionStatus);
+        creditPaid = paymentDetails.creditPaid;
+        outstanding = paymentDetails.outstanding;
+        actualPaymentStatus = paymentDetails.paymentStatus;
+        actualSessionStatus = paymentDetails.sessionStatus;
       }
 
       // Visit number
@@ -145,8 +183,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         visitNo, 
         chargerType, 
         paymentMethod: finalPaymentMethod, 
-        paymentStatus: finalPaymentStatus,
-        sessionStatus: (departureSoc != null || finalChargeAmount > 0) ? 'pending_payment' : 'ongoing', // ongoing if no departure and no charge
+        paymentStatus: actualPaymentStatus,
+        sessionStatus: actualSessionStatus,
         operator: operatorName, 
         remarks: remarks || null,
         usedKwh: usedKwh > 0 ? parseFloat(usedKwh.toFixed(3)) : 0,
@@ -154,9 +192,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         electricityCost: parseFloat(electricityCost.toFixed(2)),
         netContribution: parseFloat(netContribution.toFixed(2)),
         creditPaid, 
-        outstanding: parseFloat(outstanding.toFixed(2)),
+        outstanding,
         companyBrand: companyBrand || null,
+        isUdaro: isUdaro || false,
+        udaroDueDate: udaroDueDate || null,
       });
+
+      console.log(`[Session Create] ${vehicleNo}: Amount Rs.${finalChargeAmount}, Status=${actualPaymentStatus}, Outstanding Rs.${outstanding}${isUdaro ? ', Udaro=YES' : ''}`);
 
       return res.status(201).json({ message: 'Session created', session });
     }

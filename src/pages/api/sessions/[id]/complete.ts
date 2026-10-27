@@ -17,22 +17,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!tenantId) return res.status(400).json({ message: 'Tenant admin access required' });
 
     const { id } = req.query;
+    const { departureSoc } = req.body; // Require departure SOC to complete
+    
     const { ChargingSession } = await import('../../../../models');
 
     const session = await ChargingSession.findOne({ where: { id, tenantId } });
     if (!session) return res.status(404).json({ message: 'Session not found' });
 
-    // If ongoing → move to pending_payment
-    // If pending_payment → move to completed
-    let newStatus = 'completed';
-    if (session.sessionStatus === 'ongoing') {
-      newStatus = 'pending_payment';
+    // SESSION STATUS RULE: Based ONLY on Departure SOC
+    // To complete a session, departure SOC must be provided
+    if (!departureSoc && departureSoc !== 0) {
+      return res.status(400).json({ 
+        message: 'Departure SOC is required to complete a session',
+        hint: 'Session status is determined by Departure SOC. Please provide departureSoc to mark as completed.'
+      });
     }
 
-    await session.update({ sessionStatus: newStatus });
+    // Calculate session status based on Departure SOC
+    const newSessionStatus = (departureSoc != null && departureSoc !== '') ? 'completed' : 'ongoing';
+
+    // Update session with departure SOC, which will automatically set status to completed
+    await session.update({ 
+      departureSoc: Number(departureSoc),
+      sessionStatus: newSessionStatus
+    });
 
     return res.status(200).json({ 
-      message: `Session marked as ${newStatus.replace('_', ' ')}`,
+      message: `Session marked as ${newSessionStatus}`,
       session 
     });
   } catch (err: any) {
