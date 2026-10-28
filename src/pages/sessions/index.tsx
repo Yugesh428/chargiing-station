@@ -35,7 +35,7 @@ export default function Sessions() {
   const [filters, setFilters] = useState({ startDate: '', endDate: '', vehicleNo: '', chargerType: '', paymentMethod: '', paymentStatus: '' });
   // Separate "applied" filters — only updated when Filter is clicked or period changes
   const [appliedFilters, setAppliedFilters] = useState({ startDate: '', endDate: '', vehicleNo: '', chargerType: '', paymentMethod: '', paymentStatus: '' });
-  const [activePeriod, setActivePeriod] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('day');
+  const [activePeriod, setActivePeriod] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('week');
   
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -151,9 +151,9 @@ export default function Sessions() {
 
   useEffect(() => { load(1); }, [manageTab, appliedFilters.startDate, appliedFilters.endDate]); // Reload when tab or date range changes
 
-  // Apply day filter on first mount
+  // Apply week filter on first mount (show this week's data by default)
   useEffect(() => {
-    applyPeriod('day');
+    applyPeriod('week');
   }, []);
 
   // Fetch tenant settings for live calculation preview
@@ -570,7 +570,13 @@ export default function Sessions() {
 
   // ── Client-side filtering for vehicleNo, charger, payment method ──────────
   const filteredSessions = useMemo(() => {
-    return sessions.filter(s => {
+    console.log('🔍 Filtering sessions:', {
+      totalSessions: sessions.length,
+      filters: filters,
+      appliedFilters: appliedFilters
+    });
+    
+    const result = sessions.filter(s => {
       // Vehicle No filter (case-insensitive partial match)
       if (filters.vehicleNo && !s.vehicleNo?.toLowerCase().includes(filters.vehicleNo.toLowerCase())) {
         return false;
@@ -585,7 +591,10 @@ export default function Sessions() {
       }
       return true;
     });
-  }, [sessions, filters.vehicleNo, filters.chargerType, filters.paymentMethod]);
+    
+    console.log('✅ Filtered result:', result.length, 'sessions');
+    return result;
+  }, [sessions, filters.vehicleNo, filters.chargerType, filters.paymentMethod, filters, appliedFilters]);
   // ──────────────────────────────────────────────────────────────────────────
 
   return (
