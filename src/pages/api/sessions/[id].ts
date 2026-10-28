@@ -155,7 +155,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Non-payment updates - still need to update session status if departure SOC changed
         if (departureSoc !== undefined) {
           const currentDepartureSoc = newDeparture;
-          updates.sessionStatus = (currentDepartureSoc != null && currentDepartureSoc !== '') ? 'completed' : 'ongoing';
+          updates.sessionStatus = (currentDepartureSoc != null && currentDepartureSoc !== 0) ? 'completed' : 'ongoing';
         }
         
         if (Object.keys(updates).length > 0) {

@@ -470,8 +470,8 @@ export default function Dashboard() {
                       <YAxis stroke="#64748b" style={{ fontSize: '12px' }} />
                       <Tooltip 
                         contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }}
-                        labelFormatter={(hour) => `${hour}:00`}
-                        formatter={(value: any, name: string) => [
+                        labelFormatter={(hour: any) => `${hour}:00`}
+                        formatter={(value: any, name: any) => [
                           name === 'sessions' ? value : `Rs. ${parseFloat(value).toFixed(2)}`,
                           name === 'sessions' ? 'Sessions' : 'Revenue'
                         ]}
