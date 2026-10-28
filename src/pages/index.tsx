@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
 import Head from 'next/head';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Zap, BarChart3, Wallet, Car, CreditCard, Settings } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/use-toast';
+import { Zap, Lock, Mail, CreditCard, Wallet, BarChart3 } from 'lucide-react';
 
-export default function Home() {
+export default function LoginPage() {
   const router = useRouter();
+  const { toast } = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
@@ -19,6 +26,48 @@ export default function Home() {
     }
   }, [router]);
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        toast({
+          title: 'Login Successful',
+          description: `Welcome back, ${data.user.fullName}!`,
+        });
+
+        router.push('/dashboard');
+      } else {
+        toast({
+          title: 'Login Failed',
+          description: data.message || 'Invalid credentials',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast({
+        title: 'Error',
+        description: 'An error occurred during login',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Don't show anything while checking
   if (checking) {
     return null;
@@ -27,130 +76,162 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Lekali EV Charging Station Management System</title>
+        <title>Login - Zylo EV Charging Management</title>
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
-        {/* Navbar */}
-        <nav className="bg-white shadow-sm border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-green-600 rounded-lg flex items-center justify-center">
-                  <Zap className="h-6 w-6 text-white" fill="white" />
+      <div className="min-h-screen flex">
+        {/* Left Side - Login Form */}
+        <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+          <div className="w-full max-w-md space-y-8">
+            {/* Logo and Title */}
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-green-600 rounded-xl flex items-center justify-center">
+                  <Zap className="h-7 w-7 text-white" fill="white" />
                 </div>
-                <div>
-                  <h1 className="text-xl font-bold text-slate-900">Lekali EV</h1>
-                  <p className="text-xs text-slate-500">Charging Station Management</p>
+                <div className="text-left">
+                  <h1 className="text-2xl font-bold text-slate-900">Zylo EV</h1>
+                  <p className="text-sm text-slate-500">Charging Management</p>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <Link href="/login">
-                  <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50">
-                    Login
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </nav>
-
-        {/* Hero Section */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-center">
-            <h1 className="text-5xl font-bold text-slate-900 mb-6">
-              EV Charging Station
-              <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-600">
-                Management System
-              </span>
-            </h1>
-            <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-              Complete solution for managing your electric vehicle charging station. 
-              Track sessions, manage payments, and handle credit (udaro) settlements effortlessly.
-            </p>
-            <div className="flex gap-4 justify-center">
-              <Link href="/login">
-                <Button className="bg-blue-600 hover:bg-blue-700 px-8 py-6 text-lg">
-                  Get Started →
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          {/* Features */}
-          <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-                <BarChart3 className="h-6 w-6 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Session Management</h3>
-              <p className="text-slate-600">
-                Track all charging sessions with detailed information including SOC, rates, and payment status.
-              </p>
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</h2>
+              <p className="text-slate-600">Sign in to manage your charging station</p>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-                <Wallet className="h-6 w-6 text-green-600" />
+            {/* Login Form */}
+            <form onSubmit={handleLogin} className="mt-8 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-slate-700">
+                    Email Address
+                  </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="admin@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="pl-10 h-12 border-slate-300 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-slate-700">
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="pl-10 h-12 border-slate-300 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Udaro Settlement</h3>
-              <p className="text-slate-600">
-                Manage credit payments and settlements. Track outstanding amounts and payment history.
-              </p>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white font-semibold text-lg"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+
+            {/* Demo Credentials */}
+            <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-semibold text-blue-900 mb-2">Demo Credentials:</p>
+              <div className="text-sm text-blue-800 space-y-1">
+                <p><span className="font-medium">Email:</span> lekali_admin@lekali-ev.com</p>
+                <p><span className="font-medium">Password:</span> Admin@123</p>
+              </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
-                <BarChart3 className="h-6 w-6 text-purple-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Analytics & Reports</h3>
-              <p className="text-slate-600">
-                Comprehensive analytics with charts, customer segmentation, and revenue insights.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
-                <Car className="h-6 w-6 text-orange-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Vehicle Tracking</h3>
-              <p className="text-slate-600">
-                Track customer vehicles, visit history, and charging patterns for better service.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center mb-4">
-                <CreditCard className="h-6 w-6 text-red-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Multiple Payment Methods</h3>
-              <p className="text-slate-600">
-                Support for Cash, Bank/QR, and Credit payments with flexible settlement options.
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center mb-4">
-                <Settings className="h-6 w-6 text-yellow-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Multi-Tenant Support</h3>
-              <p className="text-slate-600">
-                Manage multiple charging stations with separate accounts and customizable settings.
-              </p>
+            {/* Footer */}
+            <div className="text-center text-sm text-slate-500 mt-8">
+              <p>© 2026 Zylo EV. All rights reserved.</p>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <footer className="bg-white border-t border-slate-200 mt-20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="text-center text-slate-600">
-              <p>© 2026 Lekali EV Charging Station Management System</p>
-              <p className="text-sm mt-2">Built for efficient charging station operations in Nepal</p>
+        {/* Right Side - Image with Text Overlay */}
+        <div className="hidden lg:block lg:w-1/2 relative bg-white">
+          {/* Background Image - Never Modified */}
+          <Image
+            src="/EV.png"
+            alt="Electric Vehicle"
+            fill
+            className="object-cover"
+            priority
+          />
+          
+          {/* Text and Icons Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/50 flex items-center justify-center p-12">
+            <div className="text-white space-y-8 max-w-lg">
+              {/* Main Heading */}
+              <div className="text-center space-y-3">
+                <h2 className="text-4xl font-bold drop-shadow-lg">
+                  Power Your Future
+                </h2>
+                <p className="text-lg text-white/90 drop-shadow">
+                  Complete EV Charging Station Management
+                </p>
+              </div>
+
+              {/* Features with Icons */}
+              <div className="space-y-4 bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/90 flex items-center justify-center flex-shrink-0">
+                    <Zap className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Session Tracking</h3>
+                    <p className="text-sm text-white/80">Monitor all charging sessions with real-time SOC and rates</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/90 flex items-center justify-center flex-shrink-0">
+                    <CreditCard className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Payment Management</h3>
+                    <p className="text-sm text-white/80">Handle Cash, Bank/QR, and Credit payments seamlessly</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-purple-500/90 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Settlement Tracking</h3>
+                    <p className="text-sm text-white/80">Automatic tracking of pending and overdue payments</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-orange-500/90 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Analytics & Reports</h3>
+                    <p className="text-sm text-white/80">Comprehensive reports with revenue insights and trends</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </footer>
+        </div>
       </div>
     </>
   );

@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, TrendingUp, TrendingDown, Calendar, Download } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+import { Toaster } from '@/components/ui/toaster';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -16,8 +18,10 @@ import {
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#6366f1', '#ef4444'];
 
 export default function AnalyticsPage() {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
+  const [exporting, setExporting] = useState<'csv' | 'excel' | null>(null);
   const [dateRange, setDateRange] = useState({
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     endDate: new Date().toISOString().slice(0, 10),
@@ -43,6 +47,69 @@ export default function AnalyticsPage() {
     fetchData();
   };
 
+  // ── Export Functions ──────────────────────────────────────────────────────
+  const exportAnalytics = async (format: 'csv' | 'excel') => {
+    setExporting(format);
+    try {
+      if (!data) {
+        toast({ title: 'No data', description: 'Load analytics first before exporting.', variant: 'destructive' });
+        return;
+      }
+
+      const filename = `Analytics_${dateRange.startDate}_to_${dateRange.endDate}`;
+
+      // Build comprehensive export data
+      const sections: any[] = [
+        ['ANALYTICS SUMMARY'],
+        ['Metric', 'Value'],
+        ['Total Sessions', data.summary?.totalSessions || 0],
+        ['Total Revenue', `Rs. ${parseFloat(data.summary?.totalRevenue || 0).toLocaleString()}`],
+        ['Average Session Value', `Rs. ${parseFloat(data.summary?.avgSessionValue || 0).toFixed(2)}`],
+        ['Profit Margin', `${parseFloat(data.summary?.profitMargin || 0).toFixed(1)}%`],
+        [],
+        ['TOP 10 VEHICLES'],
+        ['Rank', 'Vehicle No', 'Visits', 'Revenue (Rs)'],
+        ...(data.topVehicles || []).map((v: any, i: number) => [i + 1, v.vehicleNo, v.visits, v.revenue]),
+        [],
+        ['CUSTOMER SEGMENTS'],
+        ['Segment', 'Count'],
+        ...(data.customerSegments || []).map((s: any) => [s.name, s.count]),
+        [],
+        ['PAYMENT ANALYSIS'],
+        ['Method', 'Paid (Rs)', 'Pending (Rs)', 'Partial (Rs)'],
+        ...(data.paymentAnalysis || []).map((p: any) => [p.method, p.paid, p.pending, p.partial]),
+      ];
+
+      if (format === 'csv') {
+        const escape = (v: any) => {
+          if (v === null || v === undefined) return '';
+          const s = String(v);
+          return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const csv = sections.map(r => Array.isArray(r) ? r.map(escape).join(',') : '').join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${filename}.csv`; a.click();
+        URL.revokeObjectURL(url);
+        toast({ title: 'CSV exported', description: `${filename}.csv` });
+      } else {
+        const XLSX = (await import('xlsx')).default || await import('xlsx');
+        const ws = XLSX.utils.aoa_to_sheet(sections);
+        ws['!cols'] = [{ wch: 25 }, { wch: 18 }, { wch: 12 }, { wch: 16 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Analytics');
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+        toast({ title: 'Excel exported', description: `${filename}.xlsx` });
+      }
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   if (loading) return (
     <Layout activeTab="analytics" title="Analytics">
       <div className="flex justify-center items-center py-20">
@@ -54,16 +121,35 @@ export default function AnalyticsPage() {
 
   return (
     <Layout activeTab="analytics" title="Analytics">
+      <Toaster />
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Advanced Analytics</h2>
             <p className="text-sm text-slate-500 mt-0.5">Comprehensive insights and visualizations</p>
           </div>
-          <Button variant="outline" size="sm" className="gap-2">
-            <Download className="h-4 w-4" />
-            Export Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-2"
+              onClick={() => exportAnalytics('csv')}
+              disabled={exporting === 'csv'}
+            >
+              {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              CSV
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-2"
+              onClick={() => exportAnalytics('excel')}
+              disabled={exporting === 'excel'}
+            >
+              {exporting === 'excel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Excel
+            </Button>
+          </div>
         </div>
       </div>
 

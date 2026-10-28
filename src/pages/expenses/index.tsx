@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Trash2, Receipt, AlertTriangle } from 'lucide-react';
+import { Loader2, Trash2, Receipt, AlertTriangle, Download } from 'lucide-react';
 
 interface Expense {
   id: string;
@@ -31,6 +31,7 @@ export default function ExpensesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [formError, setFormError] = useState('');
+  const [exporting, setExporting] = useState<'csv' | 'excel' | null>(null);
 
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -131,6 +132,63 @@ export default function ExpensesPage() {
     }
   };
 
+  // ── Export Functions ──────────────────────────────────────────────────────
+  const exportExpenses = async (format: 'csv' | 'excel') => {
+    setExporting(format);
+    try {
+      if (!expenses.length) {
+        setToast('No expenses to export');
+        setTimeout(() => setToast(''), 3000);
+        return;
+      }
+
+      const headers = ['Date', 'Type', 'Description', 'Method', 'Amount (Rs)', 'Paid To', 'Voucher Ref', 'Remarks'];
+      const rows = expenses.map(e => [
+        String(e.date).split('T')[0],
+        e.expenseType,
+        e.description,
+        e.paymentMethod,
+        Number(e.amount).toFixed(2),
+        e.paidTo || '',
+        e.voucherRef || '',
+        e.remarks || '',
+      ]);
+
+      const dateRange = startDate && endDate ? `_${startDate}_to_${endDate}` : startDate ? `_from_${startDate}` : '';
+      const filename = `Expenses${dateRange}`;
+
+      if (format === 'csv') {
+        const escape = (v: any) => {
+          if (v === null || v === undefined) return '';
+          const s = String(v);
+          return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const csv = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))].join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${filename}.csv`; a.click();
+        URL.revokeObjectURL(url);
+        setToast(`CSV exported — ${expenses.length} expenses`);
+        setTimeout(() => setToast(''), 3000);
+      } else {
+        const XLSX = (await import('xlsx')).default || await import('xlsx');
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 30 }, { wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 20 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+        setToast(`Excel exported — ${expenses.length} expenses`);
+        setTimeout(() => setToast(''), 3000);
+      }
+    } catch (err: any) {
+      setFormError(`Export failed: ${err.message}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   return (
     <Layout activeTab="expenses" title="Expenses">
       {toast && (
@@ -139,9 +197,33 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-900">Expenses</h2>
-        <p className="text-sm text-slate-500 mt-0.5">Track all station expenses</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Expenses</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Track all station expenses</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exportExpenses('csv')}
+            disabled={exporting === 'csv' || !expenses.length}
+            className="gap-1.5"
+          >
+            {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exportExpenses('excel')}
+            disabled={exporting === 'excel' || !expenses.length}
+            className="gap-1.5"
+          >
+            {exporting === 'excel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Excel
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

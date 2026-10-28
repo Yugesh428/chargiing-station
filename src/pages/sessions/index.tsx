@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Upload, X, Clock, DollarSign, Check, Zap, AlertCircle } from 'lucide-react';
+import { Loader2, Upload, X, Clock, DollarSign, Check, Zap, AlertCircle, Download } from 'lucide-react';
 import { useRouter } from 'next/router';
 import { useToast } from '@/components/ui/use-toast';
 import { Toaster } from '@/components/ui/toaster';
@@ -33,6 +33,9 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [filters, setFilters] = useState({ startDate: '', endDate: '', vehicleNo: '', chargerType: '', paymentMethod: '', paymentStatus: '' });
+  // Separate "applied" filters — only updated when Filter is clicked or period changes
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: '', endDate: '', vehicleNo: '', chargerType: '', paymentMethod: '', paymentStatus: '' });
+  const [activePeriod, setActivePeriod] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('day');
   
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -68,6 +71,12 @@ export default function Sessions() {
   const [manageTab, setManageTab] = useState('all');
   const [completedPeriod, setCompletedPeriod] = useState('today'); // For future use
 
+  // Always-current refs so load() never reads stale closure values
+  const filtersRef = useRef(appliedFilters);
+  const manageTabRef = useRef(manageTab);
+  useEffect(() => { filtersRef.current = appliedFilters; }, [appliedFilters]);
+  useEffect(() => { manageTabRef.current = manageTab; }, [manageTab]);
+
   // Vehicle lookup for modal
   const [vehicleInfo, setVehicleInfo] = useState<any>(null);
   const [lookingUp, setLookingUp] = useState(false);
@@ -81,27 +90,55 @@ export default function Sessions() {
     'Content-Type': 'application/json'
   };
 
+  // Period filter helper — returns {startDate, endDate} for the given period
+  const getPeriodDates = (period: 'day' | 'week' | 'month' | 'year') => {
+    const today = new Date();
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    if (period === 'day') {
+      const s = fmt(today);
+      return { startDate: s, endDate: s };
+    }
+    if (period === 'week') {
+      const day = today.getDay(); // 0=Sun
+      const mon = new Date(today); mon.setDate(today.getDate() - day + (day === 0 ? -6 : 1));
+      return { startDate: fmt(mon), endDate: fmt(today) };
+    }
+    if (period === 'month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { startDate: fmt(start), endDate: fmt(today) };
+    }
+    // year
+    const start = new Date(today.getFullYear(), 0, 1);
+    return { startDate: fmt(start), endDate: fmt(today) };
+  };
+
+  const applyPeriod = (period: 'day' | 'week' | 'month' | 'year') => {
+    const dates = getPeriodDates(period);
+    setActivePeriod(period);
+    setFilters(f => ({ ...f, startDate: dates.startDate, endDate: dates.endDate }));
+    // Also apply immediately to appliedFilters so load() picks it up
+    setAppliedFilters(f => ({ ...f, startDate: dates.startDate, endDate: dates.endDate }));
+  };
+
   const load = async (p = 1) => {
     setLoading(true);
+    const activeFilters = filtersRef.current;
+    const activeTab = manageTabRef.current;
     try {
       const params = new URLSearchParams({ 
         page: String(p), 
-        limit: '10', // Changed to 10 records per page
-        ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) 
+        limit: '10',
+        ...Object.fromEntries(Object.entries(activeFilters).filter(([, v]) => v)) 
       });
       
-      // Add tab filtering
-      if (manageTab === 'ongoing') {
-        // Ongoing: departureSoc is NULL (still charging)
+      if (activeTab === 'ongoing') {
         params.append('sessionStatus', 'ongoing');
-      } else if (manageTab === 'pending_payment') {
-        // Pending Payment: filter by payment status, not session status
-        params.append('unpaidOnly', 'true'); // Special flag for unpaid/partially paid
-      } else if (manageTab === 'completed') {
-        // Completed: departureSoc is filled (charging finished)
+      } else if (activeTab === 'pending_payment') {
+        params.append('unpaidOnly', 'true');
+      } else if (activeTab === 'completed') {
         params.append('sessionStatus', 'completed');
+        params.append('paymentStatus', 'Paid');
       }
-      // 'all' tab = no session status filter, shows everything
       
       const r = await fetch(`/api/sessions?${params}`, { headers });
       const d = await r.json();
@@ -112,7 +149,12 @@ export default function Sessions() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(1); }, [manageTab]); // Reload when tab changes
+  useEffect(() => { load(1); }, [manageTab, appliedFilters.startDate, appliedFilters.endDate]); // Reload when tab or date range changes
+
+  // Apply day filter on first mount
+  useEffect(() => {
+    applyPeriod('day');
+  }, []);
 
   // Fetch tenant settings for live calculation preview
   useEffect(() => {
@@ -136,6 +178,17 @@ export default function Sessions() {
         const r = await fetch(`/api/vehicles/lookup?vehicleNo=${encodeURIComponent(v)}`, { headers });
         const d = await r.json();
         setVehicleInfo(d);
+        
+        // AUTO-DETECT SETTLEMENT VEHICLE: Auto-check Udaro and fill due date
+        if (d.isSettlementVehicle) {
+          // Slice ISO date to YYYY-MM-DD for the date input
+          const dueDateFormatted = d.nextDueDate ? String(d.nextDueDate).slice(0, 10) : '';
+          setFormData(prev => ({
+            ...prev,
+            isUdaro: true,
+            udaroDueDate: dueDateFormatted,
+          }));
+        }
       } catch { setVehicleInfo(null); }
       setLookingUp(false);
     }, 400);
@@ -147,6 +200,13 @@ export default function Sessions() {
     if (!session) return;
     
     setEditingSession(session);
+
+    // Auto-calculate charge amount from SOC & rate
+    const arrival = parseFloat(String(session.arrivalSoc)) || 0;
+    const departure = parseFloat(String(session.departureSoc)) || 0;
+    const rate = parseFloat(String(session.ratePerPercent)) || 0;
+    const autoCharge = (departure > arrival && rate > 0) ? ((departure - arrival) * rate).toFixed(2) : (session.chargeAmount ? String(session.chargeAmount) : '');
+
     setFormData({
       date: String(session.date).slice(0, 10),
       time: session.time || '',
@@ -154,7 +214,7 @@ export default function Sessions() {
       arrivalSoc: session.arrivalSoc ? String(session.arrivalSoc) : '',
       departureSoc: session.departureSoc ? String(session.departureSoc) : '',
       ratePerPercent: session.ratePerPercent ? String(session.ratePerPercent) : '',
-      chargeAmount: session.chargeAmount ? String(session.chargeAmount) : '',
+      chargeAmount: autoCharge,
       chargerType: session.chargerType,
       paymentMethod: session.paymentMethod,
       paymentStatus: session.paymentStatus,
@@ -355,15 +415,197 @@ export default function Sessions() {
     return { charged, amount, kwh, cost, net, electricityRate, neaCostRate };
   })();
 
+  // ── Export to CSV ──────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState<'csv' | 'excel' | null>(null);
+
+  // ── shared: fetch ALL rows matching current filters ──────────────────────
+  const fetchAllRows = async (): Promise<any[]> => {
+    const params = new URLSearchParams({
+      page: '1',
+      limit: '9999',
+      ...Object.fromEntries(Object.entries(filtersRef.current).filter(([, v]) => v)),
+    });
+    const activeTab = manageTabRef.current;
+    if (activeTab === 'ongoing') {
+      params.append('sessionStatus', 'ongoing');
+    } else if (activeTab === 'pending_payment') {
+      params.append('unpaidOnly', 'true');
+    } else if (activeTab === 'completed') {
+      params.append('sessionStatus', 'completed');
+      params.append('paymentStatus', 'Paid');
+    }
+    const r = await fetch(`/api/sessions?${params}`, { headers });
+    const d = await r.json();
+    return d.sessions || [];
+  };
+
+  // ── shared: build row array for export ───────────────────────────────────
+  const EXPORT_HEADERS = [
+    'Date', 'Time', 'Vehicle No', 'Company/Brand',
+    'Arrival SOC %', 'Departure SOC %', 'Charged %',
+    'Rate (Rs/%)', 'Charge Amount (Rs)',
+    'Charger', 'Payment Method', 'Payment Status',
+    'Paid (Rs)', 'Outstanding (Rs)',
+    'Settlement (Udaro)', 'Udaro Due Date',
+    'Settlement Method', 'Settlement Date',
+    'Operator', 'Visit No', 'Remarks',
+  ];
+
+  const buildRows = (sessions: any[]): (string | number)[][] =>
+    sessions.map((s: any) => [
+      String(s.date).slice(0, 10),
+      s.time || '',
+      s.vehicleNo || '',
+      s.companyBrand || '',
+      s.arrivalSoc != null ? parseFloat(s.arrivalSoc) : '',
+      s.departureSoc != null ? parseFloat(s.departureSoc) : '',
+      s.chargedPercent ? parseFloat(parseFloat(s.chargedPercent).toFixed(2)) : '',
+      s.ratePerPercent != null ? parseFloat(s.ratePerPercent) : '',
+      s.chargeAmount ? parseFloat(parseFloat(s.chargeAmount).toFixed(2)) : 0,
+      s.chargerType || '',
+      s.paymentMethod || '',
+      s.paymentStatus || '',
+      s.creditPaid ? parseFloat(parseFloat(s.creditPaid).toFixed(2)) : 0,
+      s.outstanding ? parseFloat(parseFloat(s.outstanding).toFixed(2)) : 0,
+      s.isUdaro ? 'Yes' : 'No',
+      s.udaroDueDate ? String(s.udaroDueDate).slice(0, 10) : '',
+      s.settlementMethod || '',
+      s.settlementDate ? String(s.settlementDate).slice(0, 10) : '',
+      s.operator || '',
+      s.visitNo != null ? s.visitNo : '',
+      s.remarks || '',
+    ]);
+
+  const buildFilename = (ext: string) => {
+    const tab = manageTabRef.current;
+    const f = filtersRef.current;
+    const tabLabel = tab === 'all' ? 'All'
+      : tab === 'ongoing' ? 'Ongoing'
+      : tab === 'pending_payment' ? 'Pending'
+      : 'Completed';
+    const dateRange = f.startDate && f.endDate
+      ? `_${f.startDate}_to_${f.endDate}`
+      : f.startDate ? `_from_${f.startDate}` : '';
+    return `Sessions_${tabLabel}${dateRange}.${ext}`;
+  };
+
+  // ── Export CSV ────────────────────────────────────────────────────────────
+  const exportCSV = async () => {
+    setExporting('csv');
+    try {
+      const rows = await fetchAllRows();
+      if (!rows.length) {
+        toast({ title: 'No data', description: 'No sessions match the current filters.', variant: 'destructive' });
+        return;
+      }
+      const escape = (v: any) => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [
+        EXPORT_HEADERS.map(escape).join(','),
+        ...buildRows(rows).map(r => r.map(escape).join(',')),
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel CSV open
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const filename = buildFilename('csv');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: `CSV exported — ${rows.length} sessions`, description: filename });
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // ── Export Excel ──────────────────────────────────────────────────────────
+  const exportExcel = async () => {
+    setExporting('excel');
+    try {
+      const rows = await fetchAllRows();
+      if (!rows.length) {
+        toast({ title: 'No data', description: 'No sessions match the current filters.', variant: 'destructive' });
+        return;
+      }
+
+      // Dynamic import so xlsx is only loaded when needed
+      const XLSX = (await import('xlsx')).default || await import('xlsx');
+      const wsData = [EXPORT_HEADERS, ...buildRows(rows)];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Column widths
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 8 },  { wch: 12 }, { wch: 16 },
+        { wch: 13 }, { wch: 16 }, { wch: 11 },
+        { wch: 12 }, { wch: 18 },
+        { wch: 8 },  { wch: 15 }, { wch: 16 },
+        { wch: 12 }, { wch: 16 },
+        { wch: 18 }, { wch: 14 },
+        { wch: 18 }, { wch: 16 },
+        { wch: 14 }, { wch: 9 },  { wch: 20 },
+      ];
+
+      // Style header row bold (basic)
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+        if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: '1E3A5F' } }, font2: { color: { rgb: 'FFFFFF' } } };
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sessions');
+      const filename = buildFilename('xlsx');
+      XLSX.writeFile(wb, filename);
+      toast({ title: `Excel exported — ${rows.length} sessions`, description: filename });
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── Client-side filtering for vehicleNo, charger, payment method ──────────
+  const filteredSessions = useMemo(() => {
+    return sessions.filter(s => {
+      // Vehicle No filter (case-insensitive partial match)
+      if (filters.vehicleNo && !s.vehicleNo?.toLowerCase().includes(filters.vehicleNo.toLowerCase())) {
+        return false;
+      }
+      // Charger type filter
+      if (filters.chargerType && s.chargerType !== filters.chargerType) {
+        return false;
+      }
+      // Payment method filter
+      if (filters.paymentMethod && s.paymentMethod !== filters.paymentMethod) {
+        return false;
+      }
+      return true;
+    });
+  }, [sessions, filters.vehicleNo, filters.chargerType, filters.paymentMethod]);
+  // ──────────────────────────────────────────────────────────────────────────
+
   return (
     <Layout activeTab="sessions" title="Charging Sessions">
       <Toaster />
       <div className="flex items-center justify-between mb-6">
         <div>
+
           <h2 className="text-xl font-bold text-slate-900">Charging Sessions</h2>
           <p className="text-sm text-slate-500 mt-0.5">{total.toLocaleString()} total sessions</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV} disabled={exporting !== null} className="gap-2 text-green-700 border-green-300 hover:bg-green-50">
+            {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting !== null} className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-50">
+            {exporting === 'excel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Excel
+          </Button>
           <Button variant="outline" size="sm" onClick={() => router.push('/sessions/import')} className="gap-2">
             <Upload className="h-4 w-4" /> Import
           </Button>
@@ -430,6 +672,45 @@ export default function Sessions() {
                   </div>
                 </div>
 
+                {/* SETTLEMENT VEHICLE DETECTION BANNER */}
+                {vehicleInfo?.isSettlementVehicle && (
+                  <div className="p-4 bg-gradient-to-r from-purple-600 to-purple-700 border-2 border-purple-400 rounded-lg shadow-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                        <span className="text-2xl">🔖</span>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-white font-bold text-base mb-1">
+                          Settlement Vehicle Detected!
+                        </h4>
+                        <p className="text-purple-100 text-sm mb-2">
+                          Vehicle <span className="font-bold text-white">{formData.vehicleNo}</span> is registered for settlement arrangement
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                          <div className="flex items-center gap-2 bg-white/20 rounded-full px-3 py-1">
+                            <span className="text-purple-200">Frequency:</span>
+                            <span className="font-semibold text-white capitalize">
+                              {vehicleInfo.settlementFrequency || 'Not Set'}
+                            </span>
+                          </div>
+                          {vehicleInfo.nextDueDate && (
+                            <div className="flex items-center gap-2 bg-white/20 rounded-full px-3 py-1">
+                              <span className="text-purple-200">Next Due:</span>
+                              <span className="font-semibold text-white">{vehicleInfo.nextDueDate}</span>
+                            </div>
+                          )}
+                          {formData.isUdaro && (
+                            <div className="flex items-center gap-2 bg-green-500 rounded-full px-3 py-1 cursor-default">
+                              <Check className="h-4 w-4 text-white" />
+                              <span className="font-semibold text-white">Udaro Auto-Applied</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Row 3 - SOC */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -440,7 +721,13 @@ export default function Sessions() {
                       max="100"
                       step="0.01"
                       value={formData.arrivalSoc}
-                      onChange={e => setFormData({...formData, arrivalSoc: e.target.value})}
+                      onChange={e => {
+                        const arrival = parseFloat(e.target.value) || 0;
+                        const departure = parseFloat(formData.departureSoc) || 0;
+                        const rate = parseFloat(formData.ratePerPercent) || 0;
+                        const auto = (departure > arrival && rate > 0) ? ((departure - arrival) * rate).toFixed(2) : '';
+                        setFormData({...formData, arrivalSoc: e.target.value, chargeAmount: auto});
+                      }}
                       placeholder="Optional"
                       className="h-9"
                     />
@@ -453,7 +740,13 @@ export default function Sessions() {
                       max="100"
                       step="0.01"
                       value={formData.departureSoc}
-                      onChange={e => setFormData({...formData, departureSoc: e.target.value})}
+                      onChange={e => {
+                        const departure = parseFloat(e.target.value) || 0;
+                        const arrival = parseFloat(formData.arrivalSoc) || 0;
+                        const rate = parseFloat(formData.ratePerPercent) || 0;
+                        const auto = (departure > arrival && rate > 0) ? ((departure - arrival) * rate).toFixed(2) : '';
+                        setFormData({...formData, departureSoc: e.target.value, chargeAmount: auto});
+                      }}
                       placeholder="Optional"
                       className="h-9"
                     />
@@ -469,7 +762,13 @@ export default function Sessions() {
                       min="0"
                       step="0.01"
                       value={formData.ratePerPercent}
-                      onChange={e => setFormData({...formData, ratePerPercent: e.target.value})}
+                      onChange={e => {
+                        const rate = parseFloat(e.target.value) || 0;
+                        const arrival = parseFloat(formData.arrivalSoc) || 0;
+                        const departure = parseFloat(formData.departureSoc) || 0;
+                        const auto = (departure > arrival && rate > 0) ? ((departure - arrival) * rate).toFixed(2) : '';
+                        setFormData({...formData, ratePerPercent: e.target.value, chargeAmount: auto});
+                      }}
                       placeholder="Optional"
                       className="h-9"
                     />
@@ -478,14 +777,12 @@ export default function Sessions() {
                     <Label className="text-sm font-medium">Charge Amount Rs.</Label>
                     <Input
                       type="number"
-                      min="0"
-                      step="0.01"
                       value={formData.chargeAmount}
-                      onChange={e => setFormData({...formData, chargeAmount: e.target.value})}
-                      placeholder="Or auto-calculated"
-                      className="h-9"
+                      readOnly
+                      placeholder="Auto-calculated from SOC × Rate"
+                      className="h-9 bg-blue-50 border-blue-200 font-semibold text-blue-700 cursor-not-allowed"
                     />
-                    <p className="text-xs text-slate-400">Enter manually or auto-calc</p>
+                    <p className="text-xs text-blue-500">Auto-calculated: (Dep. SOC − Arr. SOC) × Rate</p>
                   </div>
                 </div>
 
@@ -548,41 +845,6 @@ export default function Sessions() {
                     placeholder="Optional notes"
                     className="h-9"
                   />
-                </div>
-
-                {/* Settlement (Udaro) Section */}
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="isUdaro"
-                      checked={formData.isUdaro}
-                      onChange={e => setFormData({...formData, isUdaro: e.target.checked})}
-                      className="h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    <Label htmlFor="isUdaro" className="text-sm font-semibold text-purple-800 cursor-pointer">
-                      Settlement (Udaro) - Credit Arrangement
-                    </Label>
-                  </div>
-                  <p className="text-xs text-purple-600">
-                    Check this if customer will pay later according to agreed terms (weekly, monthly, etc.)
-                  </p>
-                  
-                  {formData.isUdaro && (
-                    <div className="space-y-2 pt-2 border-t border-purple-200">
-                      <Label className="text-sm font-medium text-purple-700">Settlement Due Date</Label>
-                      <Input
-                        type="date"
-                        value={formData.udaroDueDate}
-                        onChange={e => setFormData({...formData, udaroDueDate: e.target.value})}
-                        className="h-9 border-purple-300"
-                        placeholder="When is payment due?"
-                      />
-                      <p className="text-xs text-purple-500">
-                        Set the agreed due date based on vehicle's settlement frequency
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Payment Status Section (only show in edit mode) */}
@@ -695,6 +957,30 @@ export default function Sessions() {
                         <Badge variant={vehicleInfo.isNew ? 'warning' : 'success'} className="text-xs">
                           {vehicleInfo.isNew ? '🆕 NEW VEHICLE' : '✅ EXISTING'}
                         </Badge>
+
+                        {/* PENDING DUES ALERT — show prominently for any vehicle with outstanding */}
+                        {!vehicleInfo.isNew && parseFloat(vehicleInfo.totalOutstanding) > 0 && (
+                          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                              <span className="text-xs font-bold text-red-700 uppercase tracking-wide">Pending Dues</span>
+                            </div>
+                            <p className="text-2xl font-black text-red-600 leading-none">
+                              Rs. {parseFloat(vehicleInfo.totalOutstanding).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-xs text-red-500 mt-1">Ask customer to clear dues</p>
+                          </div>
+                        )}
+
+                        {/* Settlement badge — always show if settlement vehicle, even if new */}
+                        {vehicleInfo.isSettlementVehicle && (
+                          <div className="bg-purple-100 border border-purple-300 rounded-md px-3 py-2">
+                            <div className="text-xs font-bold text-purple-700">🔖 Settlement Vehicle</div>
+                            <div className="text-xs text-purple-600 mt-0.5 capitalize">
+                              {vehicleInfo.settlementFrequency || 'Arrangement'} · Due: {vehicleInfo.nextDueDate ? String(vehicleInfo.nextDueDate).slice(0, 10) : '—'}
+                            </div>
+                          </div>
+                        )}
                         {!vehicleInfo.isNew && (
                           <div className="space-y-1.5 text-xs">
                             <div className="flex justify-between">
@@ -713,10 +999,19 @@ export default function Sessions() {
                               <span className="text-slate-500">Total Revenue</span>
                               <span className="font-semibold">Rs. {parseFloat(vehicleInfo.totalAmount).toLocaleString()}</span>
                             </div>
-                            {parseFloat(vehicleInfo.totalOutstanding) > 0 && (
-                              <div className="flex justify-between text-red-600">
-                                <span>Outstanding</span>
-                                <span className="font-semibold">Rs. {parseFloat(vehicleInfo.totalOutstanding).toLocaleString()}</span>
+                            {vehicleInfo.isSettlementVehicle && (
+                              <div className="mt-2 pt-2 border-t border-purple-200 bg-purple-50 -mx-4 -mb-4 px-4 py-2 rounded-b">
+                                <div className="text-xs font-semibold text-purple-700 mb-1">🔖 Settlement Vehicle</div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-purple-600">Frequency</span>
+                                  <span className="font-medium text-purple-800 capitalize">{vehicleInfo.settlementFrequency || '—'}</span>
+                                </div>
+                                {vehicleInfo.nextDueDate && (
+                                  <div className="flex justify-between text-xs mt-1">
+                                    <span className="text-purple-600">Next Due</span>
+                                    <span className="font-medium text-purple-800">{vehicleInfo.nextDueDate}</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -775,14 +1070,14 @@ export default function Sessions() {
       {showViewModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
               <div>
-                <h3 className="text-lg font-bold">Vehicle History</h3>
-                <p className="text-sm text-purple-100">Vehicle No: {viewingVehicle}</p>
+                <h3 className="text-xl font-bold text-slate-900">Vehicle History</h3>
+                <p className="text-sm text-slate-600">Vehicle No: {viewingVehicle}</p>
               </div>
               <button
                 onClick={closeModals}
-                className="text-white/80 hover:text-white transition-colors"
+                className="text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -791,7 +1086,7 @@ export default function Sessions() {
             <div className="p-6">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                  <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
                 </div>
               ) : vehicleHistory ? (
                 <>
@@ -928,11 +1223,46 @@ export default function Sessions() {
       {/* Filters */}
       <Card className="border-slate-200 bg-white mb-4">
         <CardContent className="p-4">
+          {/* Period Quick Filters */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-medium text-slate-500 mr-1">Period:</span>
+            {([
+              { key: 'day',   label: 'Today' },
+              { key: 'week',  label: 'This Week' },
+              { key: 'month', label: 'This Month' },
+              { key: 'year',  label: 'This Year' },
+            ] as const).map(p => (
+              <button
+                key={p.key}
+                onClick={() => applyPeriod(p.key)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                  activePeriod === p.key
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            {activePeriod === 'custom' && (
+              <span className="text-xs text-slate-400 ml-1">Custom range</span>
+            )}
+            <button
+              onClick={() => {
+                setActivePeriod('custom');
+                setFilters(f => ({ ...f, startDate: '', endDate: '' }));
+                setAppliedFilters(f => ({ ...f, startDate: '', endDate: '' }));
+              }}
+              className="ml-auto text-xs text-slate-400 hover:text-slate-600 underline"
+            >
+              Clear dates
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <Input type="date" placeholder="Start date" value={filters.startDate}
-              onChange={e => setFilters(f => ({ ...f, startDate: e.target.value }))} />
+              onChange={e => { setActivePeriod('custom'); setFilters(f => ({ ...f, startDate: e.target.value })); }} />
             <Input type="date" placeholder="End date" value={filters.endDate}
-              onChange={e => setFilters(f => ({ ...f, endDate: e.target.value }))} />
+              onChange={e => { setActivePeriod('custom'); setFilters(f => ({ ...f, endDate: e.target.value })); }} />
             <Input placeholder="Vehicle No." value={filters.vehicleNo}
               onChange={e => setFilters(f => ({ ...f, vehicleNo: e.target.value }))} />
             <select value={filters.chargerType} onChange={e => setFilters(f => ({ ...f, chargerType: e.target.value }))}
@@ -945,7 +1275,7 @@ export default function Sessions() {
               <option value="">All Methods</option>
               <option>Cash</option><option>Bank/QR</option><option>Credit</option>
             </select>
-            <Button onClick={() => load(1)} className="bg-blue-600 hover:bg-blue-700">Filter</Button>
+            <Button onClick={() => load(1)} className="bg-blue-600 hover:bg-blue-700">Reload</Button>
           </div>
         </CardContent>
       </Card>
@@ -986,9 +1316,9 @@ export default function Sessions() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={24} className="py-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" /></td></tr>
-                ) : sessions.length === 0 ? (
+                ) : filteredSessions.length === 0 ? (
                   <tr><td colSpan={24} className="py-12 text-center text-slate-400 text-sm">No sessions found</td></tr>
-                ) : sessions.map((s) => (
+                ) : filteredSessions.map((s) => (
                   <tr key={s.id} className="border-b border-slate-100 hover:bg-blue-50 transition-colors">
                     <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{String(s.date).slice(0, 10)}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{s.time || '—'}</td>

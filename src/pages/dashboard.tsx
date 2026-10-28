@@ -198,7 +198,7 @@ export default function Dashboard() {
   return (
     <>
       <Head>
-        <title>Dashboard – Lekali EV Charging Station</title>
+        <title>Dashboard – Zylo EV Charging Station</title>
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -214,7 +214,7 @@ export default function Dashboard() {
                   <Zap className="h-4 w-4 text-white" fill="white" />
                 </div>
                 <span className="font-bold text-sm text-slate-900 hidden sm:block">
-                  Lekali EV
+                  Zylo EV
                 </span>
               </div>
 
@@ -245,14 +245,6 @@ export default function Dashboard() {
 
               {/* User + Logout */}
               <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="hidden sm:block text-right">
-                  <p className="text-xs font-semibold text-slate-800 leading-none">
-                    {user.fullName}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5 capitalize">
-                    {user.role.replace('_', ' ')}
-                  </p>
-                </div>
                 <Badge variant="info" className="hidden sm:inline-flex capitalize">
                   {user.role.replace('_', ' ')}
                 </Badge>
@@ -279,7 +271,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-bold text-slate-900">Dashboard</h2>
               <p className="text-sm text-slate-500 mt-0.5">
-                Overview of Lekali EV Charging Station operations
+                Overview of Zylo EV Charging Station operations
               </p>
             </div>
             <Button

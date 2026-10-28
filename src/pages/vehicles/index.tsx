@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, X, Plus, Pencil, Trash2, Car, User } from 'lucide-react';
+import { Loader2, X, Plus, Pencil, Trash2, Car, User, Download } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
@@ -23,6 +23,10 @@ export default function Vehicles() {
   const [filteredRegistered, setFilteredRegistered] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Add/Edit modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -243,6 +247,103 @@ export default function Vehicles() {
     </tr>
   );
 
+  // ── Export Functions ──────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState<'csv' | 'excel' | null>(null);
+
+  const EXPORT_HEADERS = [
+    'Vehicle No', 'Company/Brand', 'Owner Name', 'Contact',
+    'First Visit', 'Last Visit', 'Visits',
+    'Charged %', 'Revenue Rs.', 'Last Rate',
+    'Outstanding Rs.', 'Status', 'Notes'
+  ];
+
+  const buildExportRows = (vehicles: any[]) =>
+    vehicles.map((v: any) => [
+      v.vehicleNo || '',
+      v.companyBrand || '',
+      v.ownerName || '',
+      v.ownerContact || '',
+      v.firstVisit ? String(v.firstVisit).slice(0, 10) : '',
+      v.lastVisit ? String(v.lastVisit).slice(0, 10) : '',
+      v.visits || 0,
+      v.chargedPercent ? parseFloat(v.chargedPercent).toFixed(2) : '',
+      v.totalRevenue ? parseFloat(v.totalRevenue).toFixed(2) : 0,
+      v.lastRate ? parseFloat(v.lastRate).toFixed(2) : '',
+      v.totalOutstanding ? parseFloat(v.totalOutstanding).toFixed(2) : 0,
+      v.isSettlementVehicle ? 'Registered' : (v.visits > 0 ? 'Active' : 'Session Only'),
+      v.notes || ''
+    ]);
+
+  const exportCSV = () => {
+    setExporting('csv');
+    try {
+      const data = tab === 'sessions' ? filteredSessions : filteredRegistered;
+      if (!data.length) {
+        toast({ title: 'No data', description: 'No vehicles to export.', variant: 'destructive' });
+        return;
+      }
+      const escape = (v: any) => {
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [
+        EXPORT_HEADERS.map(escape).join(','),
+        ...buildExportRows(data).map(r => r.map(escape).join(','))
+      ].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const filename = `Vehicles_${tab === 'sessions' ? 'FromSessions' : 'OwnerRegistered'}.csv`;
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: `CSV exported — ${data.length} vehicles`, description: filename });
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportExcel = async () => {
+    setExporting('excel');
+    try {
+      const data = tab === 'sessions' ? filteredSessions : filteredRegistered;
+      if (!data.length) {
+        toast({ title: 'No data', description: 'No vehicles to export.', variant: 'destructive' });
+        return;
+      }
+      const XLSX = (await import('xlsx')).default || await import('xlsx');
+      const wsData = [EXPORT_HEADERS, ...buildExportRows(data)];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+        { wch: 12 }, { wch: 12 }, { wch: 8 },
+        { wch: 12 }, { wch: 14 }, { wch: 10 },
+        { wch: 16 }, { wch: 14 }, { wch: 30 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Vehicles');
+      const filename = `Vehicles_${tab === 'sessions' ? 'FromSessions' : 'OwnerRegistered'}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast({ title: `Excel exported — ${data.length} vehicles`, description: filename });
+    } catch (err: any) {
+      toast({ title: 'Export failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setExporting(null);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── Pagination logic ──────────────────────────────────────────────────────
+  const activeList = tab === 'sessions' ? filteredSessions : filteredRegistered;
+  const totalPages = Math.ceil(activeList.length / itemsPerPage);
+  const paginatedList = activeList.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Reset to page 1 when switching tabs or search changes
+  useEffect(() => { setCurrentPage(1); }, [tab, search]);
+  // ──────────────────────────────────────────────────────────────────────────
+
   return (
     <Layout activeTab="vehicles" title="Vehicle Master">
       <Toaster />
@@ -340,6 +441,14 @@ export default function Vehicles() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={exportCSV} disabled={exporting !== null} className="gap-1.5 h-9 text-green-700 border-green-300 hover:bg-green-50">
+            {exporting === 'csv' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={exportExcel} disabled={exporting !== null} className="gap-1.5 h-9 text-emerald-700 border-emerald-300 hover:bg-emerald-50">
+            {exporting === 'excel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Excel
+          </Button>
           <Input placeholder="Search vehicle no., brand, owner..." value={search}
             onChange={e => setSearch(e.target.value)} className="w-72 h-9" />
           <Button size="sm" onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 gap-1.5 h-9">
@@ -400,12 +509,42 @@ export default function Vehicles() {
                 <tbody>
                   {loading ? (
                     <tr><td colSpan={11} className="py-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" /></td></tr>
-                  ) : filteredSessions.length === 0 ? (
+                  ) : paginatedList.length === 0 ? (
                     <tr><td colSpan={11} className="py-12 text-center text-slate-400 text-sm">No vehicles found</td></tr>
-                  ) : filteredSessions.map(renderSessionRow)}
+                  ) : paginatedList.map(renderSessionRow)}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {!loading && totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+                <p className="text-sm text-slate-500">
+                  Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, activeList.length)} of {activeList.length} vehicles
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-8"
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-slate-600">Page {currentPage} of {totalPages}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-8"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -426,7 +565,7 @@ export default function Vehicles() {
                 <tbody>
                   {loading ? (
                     <tr><td colSpan={9} className="py-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" /></td></tr>
-                  ) : filteredRegistered.length === 0 ? (
+                  ) : paginatedList.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="py-16 text-center">
                         <User className="h-8 w-8 mx-auto text-slate-300 mb-3" />
@@ -434,10 +573,40 @@ export default function Vehicles() {
                         <p className="text-slate-400 text-xs mt-1">Click "New Vehicle" to pre-register an owner's vehicle</p>
                       </td>
                     </tr>
-                  ) : filteredRegistered.map(renderRegisteredRow)}
+                  ) : paginatedList.map(renderRegisteredRow)}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {!loading && totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+                <p className="text-sm text-slate-500">
+                  Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, activeList.length)} of {activeList.length} vehicles
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-8"
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-slate-600">Page {currentPage} of {totalPages}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-8"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

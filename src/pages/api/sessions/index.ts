@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { ChargingSession } = await import('../../../models');
 
     if (req.method === 'GET') {
-      const { startDate, endDate, vehicleNo, chargerType, paymentMethod, paymentStatus, sessionStatus, unpaidOnly, page = '1', limit = '50' } = req.query;
+      const { startDate, endDate, vehicleNo, chargerType, paymentMethod, paymentStatus, sessionStatus, unpaidOnly, isUdaro, page = '1', limit = '50' } = req.query;
       const where: any = { tenantId };
       if (startDate && endDate) where.date = { [Op.between]: [startDate, endDate] };
       else if (startDate) where.date = { [Op.gte]: startDate };
@@ -29,6 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (paymentMethod) where.paymentMethod = paymentMethod;
       if (paymentStatus) where.paymentStatus = paymentStatus;
       if (sessionStatus) where.sessionStatus = sessionStatus; // Add session status filter for tabs
+      if (isUdaro === 'true') where.isUdaro = true; // Filter for settlement (Udaro) sessions only
       
       // Special filter for "Pending Payment" tab - show unpaid or partially paid sessions
       if (unpaidOnly === 'true') {

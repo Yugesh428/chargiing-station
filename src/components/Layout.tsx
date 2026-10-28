@@ -73,7 +73,7 @@ export default function Layout({ children, activeTab, title }: LayoutProps) {
   return (
     <>
       <Head>
-        <title>{title ? `${title} – Lekali EV` : 'Lekali EV Charging Station'}</title>
+        <title>{title ? `${title} – Zylo EV` : 'Zylo EV Charging Station'}</title>
       </Head>
 
       <div className="min-h-screen bg-slate-50">
@@ -86,7 +86,7 @@ export default function Layout({ children, activeTab, title }: LayoutProps) {
                 <div className="h-7 w-7 rounded-lg bg-blue-600 flex items-center justify-center">
                   <Zap className="h-4 w-4 text-white" fill="white" />
                 </div>
-                <span className="font-bold text-sm text-slate-900 hidden sm:block">Lekali EV</span>
+                <span className="font-bold text-sm text-slate-900 hidden sm:block">Zylo EV</span>
               </div>
 
               <Separator orientation="vertical" className="h-6 hidden sm:block" />
@@ -116,12 +116,8 @@ export default function Layout({ children, activeTab, title }: LayoutProps) {
 
               {/* User */}
               <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="hidden sm:block text-right">
-                  <p className="text-xs font-semibold text-slate-800 leading-none">{user.fullName}</p>
-                  <p className="text-xs text-slate-500 mt-0.5 capitalize">{user.role.replace('_', ' ')}</p>
-                </div>
                 <Badge variant="info" className="hidden sm:inline-flex capitalize text-xs">
-                  {user.role.replace('_', ' ')}
+                  {user.role === 'tenant_admin' ? 'Tenant Admin' : user.role === 'super_admin' ? 'Super Admin' : 'Operator'}
                 </Badge>
                 <Button
                   variant="ghost" size="sm"

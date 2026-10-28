@@ -9,12 +9,17 @@ interface VehicleAttributes {
   ownerName?: string;
   ownerContact?: string;
   notes?: string;
-  settlementFrequency?: string;
+  isSettlementVehicle?: boolean; // NEW: Is this vehicle on settlement arrangement?
+  settlementFrequency?: string; // weekly, biweekly, monthly, custom
+  settlementDayOfWeek?: number; // For weekly: 0=Sunday, 1=Monday, etc.
+  settlementDayOfMonth?: number; // For monthly: 1-31
+  customSettlementDays?: number; // For custom: number of days
+  nextDueDate?: Date; // NEW: Next calculated due date
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-interface VehicleCreationAttributes extends Optional<VehicleAttributes, 'id' | 'companyBrand' | 'ownerName' | 'ownerContact' | 'notes' | 'settlementFrequency' | 'createdAt' | 'updatedAt'> {}
+interface VehicleCreationAttributes extends Optional<VehicleAttributes, 'id' | 'companyBrand' | 'ownerName' | 'ownerContact' | 'notes' | 'isSettlementVehicle' | 'settlementFrequency' | 'settlementDayOfWeek' | 'settlementDayOfMonth' | 'customSettlementDays' | 'nextDueDate' | 'createdAt' | 'updatedAt'> {}
 
 class Vehicle extends Model<VehicleAttributes, VehicleCreationAttributes> implements VehicleAttributes {
   public id!: string;
@@ -24,7 +29,12 @@ class Vehicle extends Model<VehicleAttributes, VehicleCreationAttributes> implem
   public ownerName?: string;
   public ownerContact?: string;
   public notes?: string;
+  public isSettlementVehicle?: boolean;
   public settlementFrequency?: string;
+  public settlementDayOfWeek?: number;
+  public settlementDayOfMonth?: number;
+  public customSettlementDays?: number;
+  public nextDueDate?: Date;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -66,10 +76,35 @@ Vehicle.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    isSettlementVehicle: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
     settlementFrequency: {
       type: DataTypes.STRING(20),
       allowNull: true,
-      defaultValue: 'monthly',
+      defaultValue: null,
+    },
+    settlementDayOfWeek: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+    },
+    settlementDayOfMonth: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+    },
+    customSettlementDays: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+    },
+    nextDueDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
     },
   },
   {
