@@ -147,15 +147,6 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            {/* Demo Credentials */}
-            <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm font-semibold text-blue-900 mb-2">Demo Credentials:</p>
-              <div className="text-sm text-blue-800 space-y-1">
-                <p><span className="font-medium">Email:</span> lekali_admin@lekali-ev.com</p>
-                <p><span className="font-medium">Password:</span> Admin@123</p>
-              </div>
-            </div>
-
             {/* Footer */}
             <div className="text-center text-sm text-slate-500 mt-8">
               <p>© 2026 Zylo EV. All rights reserved.</p>
