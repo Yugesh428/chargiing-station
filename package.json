@@ -8,17 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate": "node scripts/runMigrations.js",
+    "migrate": "tsx scripts/migration.ts",
     "create:superadmin": "node scripts/createSuperAdmin.js",
     "create:tenant": "node scripts/createTenant.js",
     "create:zylo": "node scripts/createZyloTenant.js",
-    "create:newadmin": "node scripts/createNewAdmin.js",
-    "migrate:session-status": "node scripts/addSessionStatus.js",
-    "migrate:optional-fields": "node scripts/makeFieldsOptional.js",
-    "migrate:arrival-optional": "node scripts/makeArrivalOptional.js",
-    "migrate:rate-master": "node scripts/addRateMaster.js",
-    "fix:outstanding": "node scripts/fixOutstanding.js",
-    "fix:vehicle-data": "node scripts/fixVehicleData.js"
+    "create:newadmin": "node scripts/createNewAdmin.js"
   },
   "keywords": [],
   "author": "",
@@ -60,6 +54,7 @@
     "postcss": "^8.5.31",
     "tailwindcss": "^4.3.3",
     "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

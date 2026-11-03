@@ -19,8 +19,26 @@ export default function LoginPage() {
   useEffect(() => {
     // Check if user is already logged in
     const token = localStorage.getItem('token');
-    if (token) {
-      router.replace('/dashboard');
+    const userData = localStorage.getItem('user');
+    
+    if (token && userData) {
+      try {
+        const user = JSON.parse(userData);
+        // Only redirect if we have valid user data
+        if (user && user.id) {
+          router.push('/dashboard');
+        } else {
+          // Invalid user data, clear storage
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setChecking(false);
+        }
+      } catch (error) {
+        // Parse error, clear storage
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setChecking(false);
+      }
     } else {
       setChecking(false);
     }
@@ -68,9 +86,18 @@ export default function LoginPage() {
     }
   };
 
-  // Don't show anything while checking
+  // Don't show anything while checking authentication
   if (checking) {
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-green-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <Zap className="h-7 w-7 text-white animate-pulse" fill="white" />
+          </div>
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
