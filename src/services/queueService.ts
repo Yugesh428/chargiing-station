@@ -136,13 +136,21 @@ export async function isChargerOccupied(
 export async function addToQueue(data: QueueCreationData) {
   const { tenantId, vehicleId, notes, priority = 0, staffId } = data;
 
-  // Validate vehicle exists
+  // Validate vehicle exists (use raw: true to get plain object)
   const vehicle = await Vehicle.findOne({
     where: { id: vehicleId, tenantId },
+    raw: true, // Returns plain object instead of Sequelize instance
   });
 
   if (!vehicle) {
     throw new Error('Vehicle not found');
+  }
+
+  // Now vehicle.vehicleNo works directly since it's a plain object
+  const vehicleNo = vehicle.vehicleNo;
+
+  if (!vehicleNo) {
+    throw new Error('Vehicle number not found');
   }
 
   // Check for active queue entry
@@ -152,7 +160,7 @@ export async function addToQueue(data: QueueCreationData) {
   }
 
   // Check if vehicle is currently charging
-  const isCharging = await isVehicleCharging(tenantId, vehicle.vehicleNo);
+  const isCharging = await isVehicleCharging(tenantId, vehicleNo);
   if (isCharging) {
     throw new Error('Vehicle is currently charging');
   }
@@ -287,11 +295,18 @@ export async function assignToCharger(data: QueueAssignmentData) {
       throw new Error('Vehicle data not found');
     }
 
+    // Safely extract vehicleNo from association (handles all accessor patterns)
+    const vehicleNo = vehicle.vehicleNo || vehicle.get?.('vehicleNo') || vehicle.getDataValue?.('vehicleNo');
+
+    if (!vehicleNo) {
+      throw new Error('Vehicle number not found in queue entry');
+    }
+
     // 2. Double-check vehicle not currently charging
     const activeSession = await ChargingSession.findOne({
       where: {
         tenantId,
-        vehicleNo: vehicle.vehicleNo,
+        vehicleNo,
         sessionStatus: 'ongoing',
       },
       transaction,
@@ -331,7 +346,7 @@ export async function assignToCharger(data: QueueAssignmentData) {
 
     // 5. Calculate visit number
     const visitCount = await ChargingSession.count({
-      where: { tenantId, vehicleNo: vehicle.vehicleNo },
+      where: { tenantId, vehicleNo },
       transaction,
     });
     const visitNo = visitCount + 1;
@@ -347,18 +362,11 @@ export async function assignToCharger(data: QueueAssignmentData) {
     const neaCostRate = parseFloat(String(tenant.neaCostRate)) || 9.35;
 
     // 7. Initialize session with minimal data (ongoing charging)
-    // Charge calculations will happen when departure SOC is recorded
     let chargedPercent = null;
     let chargeAmount = 0;
     let usedKwh = 0;
     let electricityCost = 0;
     let netContribution = 0;
-
-    // If we have SOC data at assignment time (unusual but possible)
-    if (arrivalSoc != null && ratePerPercent != null) {
-      // Just record arrival SOC, no charge calculation yet
-      // Departure SOC will be recorded later
-    }
 
     // 8. Create charging session
     const chargingSession = await ChargingSession.create(
@@ -366,9 +374,9 @@ export async function assignToCharger(data: QueueAssignmentData) {
         tenantId,
         date: new Date(),
         time: new Date().toTimeString().slice(0, 5),
-        vehicleNo: vehicle.vehicleNo,
+        vehicleNo,
         arrivalSoc: arrivalSoc != null ? Number(arrivalSoc) : null,
-        departureSoc: null, // Will be filled when charging completes
+        departureSoc: null,
         chargedPercent,
         ratePerPercent: ratePerPercent != null ? Number(ratePerPercent) : null,
         chargeAmount,
@@ -376,7 +384,7 @@ export async function assignToCharger(data: QueueAssignmentData) {
         chargerType,
         paymentMethod,
         paymentStatus,
-        sessionStatus: 'ongoing', // Always starts as ongoing
+        sessionStatus: 'ongoing',
         operator: operatorName,
         remarks: `Assigned from queue to charger ${chargerId}`,
         usedKwh,
@@ -385,7 +393,7 @@ export async function assignToCharger(data: QueueAssignmentData) {
         netContribution,
         creditPaid: 0,
         outstanding: 0,
-        companyBrand: vehicle.companyBrand || null,
+        companyBrand: vehicle.companyBrand || vehicle.getDataValue?.('companyBrand') || null,
         isUdaro: false,
       },
       { transaction }
